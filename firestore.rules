@@ -1,0 +1,44 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+
+    // নিচের ইমেইলটা আপনার নিজের ইমেইল দিয়ে বদলান (firebase-config.js এর সাথে একই)
+    function isAdmin() {
+      return signedIn() && request.auth.token.email == 'your-email@gmail.com';
+    }
+
+    match /users/{uid} {
+      allow read: if signedIn();
+      allow create, update: if signedIn() && request.auth.uid == uid;
+      allow delete: if false;
+    }
+
+    match /posts/{postId} {
+      allow read: if signedIn();
+
+      allow create: if signedIn()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.text is string
+        && request.resource.data.text.size() <= 2000;
+
+      // নিজের পোস্ট এডিট করা যাবে; অন্যের পোস্টে শুধু লাইক ও কমেন্ট সংখ্যা বদলাবে
+      allow update: if signedIn() && (
+        request.auth.uid == resource.data.uid ||
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes', 'commentCount'])
+      );
+
+      allow delete: if signedIn() && (request.auth.uid == resource.data.uid || isAdmin());
+
+      match /comments/{commentId} {
+        allow read: if signedIn();
+        allow create: if signedIn()
+          && request.resource.data.uid == request.auth.uid
+          && request.resource.data.text is string
+          && request.resource.data.text.size() <= 1000;
+        allow delete: if signedIn() && (request.auth.uid == resource.data.uid || isAdmin());
+      }
+    }
+  }
+}
